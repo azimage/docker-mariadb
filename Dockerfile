@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-FROM mariadb:10.2
+FROM mariadb:10.0
 
 ENV POD_NAMESPACE "default"
 
@@ -24,6 +24,25 @@ RUN set -ex \
     && apt-get update \
     && DEBIAN_FRONTEND=noninteractive apt-get install -y curl patch \
     && rm -rf /var/lib/apt/lists/*
+
+# Install MariaDB Galera Cluster
+RUN set -ex \
+    && { \
+        echo "mariadb-galera-server-$MARIADB_MAJOR" mysql-server/root_password password 'unused'; \
+        echo "mariadb-galera-server-$MARIADB_MAJOR" mysql-server/root_password_again password 'unused'; \
+    } | debconf-set-selections \
+    && apt-get update \
+    && DEBIAN_FRONTEND=noninteractive apt-get install -y mariadb-galera-server-$MARIADB_MAJOR \
+    && rm -rf /var/lib/apt/lists/* \
+    && sed -ri 's/^user\s/#&/' /etc/mysql/my.cnf /etc/mysql/conf.d/* \
+    && rm -rf /var/lib/mysql/* \
+    && mkdir -p /var/lib/mysql /var/run/mysqld \
+    && chown -R mysql:mysql /var/lib/mysql /var/run/mysqld \
+    && chmod 777 /var/run/mysqld \
+    && find /etc/mysql/ -name '*.cnf' -print0 \
+        | xargs -0 grep -lZE '^(bind-address|log)' \
+        | xargs -rt -0 sed -Ei 's/^(bind-address|log)/#&/' \
+    && echo '[mysqld]\nskip-host-cache\nskip-name-resolve' > /etc/mysql/conf.d/docker.cnf
 
 # Install dumb-init
 RUN set -ex \
